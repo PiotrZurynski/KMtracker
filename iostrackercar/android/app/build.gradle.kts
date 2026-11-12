@@ -1,4 +1,4 @@
-﻿plugins {
+plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
@@ -10,8 +10,9 @@ android {
         applicationId = "com.example.trackercar"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        val code = (System.getenv("VERSION_CODE") ?: "1").toIntOrNull() ?: 1
+        versionCode = code
+        versionName = "1.$code"
     }
     buildFeatures { compose = true }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.14" }

@@ -8,6 +8,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      VERSION_CODE: ${{ github.run_number }}
     defaults:
       run:
         working-directory: iostrackercar/android
@@ -22,7 +24,9 @@ jobs:
           gradle-version: 8.9
       - name: Build debug APK
         run: gradle assembleDebug --no-daemon
+      - name: Name the APK with its version
+        run: cp app/build/outputs/apk/debug/app-debug.apk "TrackerCar-v${{ github.run_number }}.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: TrackerCar-apk
-          path: iostrackercar/android/app/build/outputs/apk/debug/app-debug.apk
+          name: TrackerCar-apk-v${{ github.run_number }}
+          path: iostrackercar/android/TrackerCar-v${{ github.run_number }}.apk
