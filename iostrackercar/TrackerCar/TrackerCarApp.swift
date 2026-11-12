@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import CoreLocation
 
 @main
 struct TrackerCarApp: App {
@@ -36,6 +37,12 @@ enum Demo {
             t.endedAt = start.addingTimeInterval(Double(minutes) * 60)
             t.meters = km * 1000
             t.settled = settled
+            // przykładowa trasa w okolicy Olsztyna
+            for i in 0...40 {
+                let x = Double(i) / 40
+                t.append(CLLocationCoordinate2D(latitude: 53.775 + 0.03 * x + 0.006 * sin(x * 9),
+                                                longitude: 20.45 + 0.07 * x + 0.004 * cos(x * 7)))
+            }
             ctx.insert(t)
         }
         add(daysAgo: 0, hour: 8, minutes: 25, km: 14.2)

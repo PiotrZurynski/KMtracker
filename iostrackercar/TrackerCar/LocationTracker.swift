@@ -111,13 +111,14 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         // odrzuć słabe / stare pomiary
         guard loc.horizontalAccuracy >= 0, loc.horizontalAccuracy <= 50,
               abs(loc.timestamp.timeIntervalSinceNow) < 10 else { return }
-        guard let prev = last else { last = loc; return }
+        guard let prev = last else { last = loc; trip.append(loc.coordinate); return }
         let delta = loc.distance(from: prev)
         let dt = loc.timestamp.timeIntervalSince(prev.timestamp)
         guard delta >= max(8, loc.horizontalAccuracy * 0.5),   // szum GPS na postoju
               dt > 0, delta / dt < 70 else { return }          // skoki >250 km/h
         last = loc
         trip.meters += delta
+        trip.append(loc.coordinate)
         unsaved += delta
         if unsaved >= 100 { try? context?.save(); unsaved = 0 }
         updateActivity(trip)

@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 struct ContentView: View {
     @AppStorage("tab") private var tab = 0   // ustawiane też argumentem -tab w podglądzie
@@ -100,10 +101,10 @@ struct HomeView: View {
             ScrollView {
                 VStack(spacing: 26) {
                     header
-                    hero
+                    hero.rise()
                     StartStopButton(isOn: tracker.isTracking) {
                         tracker.isTracking ? tracker.stop() : tracker.requestAndStart()
-                    }
+                    }.rise(0.12)
                     if tracker.authorization == .denied || tracker.authorization == .restricted {
                         Text("Brak zgody na lokalizację. Włącz ją w Ustawieniach iOS.")
                             .font(Theme.f(14)).foregroundStyle(Theme.accent)
@@ -163,29 +164,75 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Start / Stop (szkicowy znaczek)
+// MARK: - Start / Stop (minimalistyczny)
 
 struct StartStopButton: View {
     let isOn: Bool
     let action: () -> Void
-    @State private var spin = 0.0
+    @State private var ripple = true     // true = fala już zakończona (niewidoczna)
+    @State private var draw: CGFloat = 1
 
     var body: some View {
         Button(action: action) {
-            VolvoMark(label: isOn ? "STOP" : "START", isOn: isOn, spin: spin)
-                .frame(width: 210, height: 210)
+            ZStack {
+                Circle().stroke(Theme.accent, lineWidth: 2)
+                    .scaleEffect(ripple ? 1.45 : 1).opacity(ripple ? 0 : 0.7)
+                Circle().fill(isOn ? Theme.accent : Color.clear)
+                Circle().trim(from: 0, to: draw)
+                    .stroke(isOn ? Theme.accent : Theme.ink.opacity(0.85),
+                            style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Text(isOn ? "STOP" : "START")
+                    .font(Theme.f(26, .medium)).tracking(5).foregroundStyle(Theme.ink)
+            }
+            .frame(width: 170, height: 170)
         }
         .buttonStyle(.plain)
-        .onChange(of: isOn) { _, on in
-            if on { withAnimation(.linear(duration: 9).repeatForever(autoreverses: false)) { spin = 360 } }
-            else { withAnimation(.default) { spin = 0 } }
-        }
-        .onAppear {
-            if isOn { withAnimation(.linear(duration: 9).repeatForever(autoreverses: false)) { spin = 360 } }
+        .animation(.easeInOut(duration: 0.25), value: isOn)
+        .onChange(of: isOn) { _, _ in
+            ripple = false; draw = 0                      // krótka animacja, kończy się sama
+            DispatchQueue.main.async {
+                withAnimation(.easeOut(duration: 0.9)) { ripple = true }
+                withAnimation(.easeInOut(duration: 0.7)) { draw = 1 }
+            }
         }
         .sensoryFeedback(.impact, trigger: isOn)
     }
 }
+
+// MARK: - Mapa trasy
+
+struct RouteMap: View {
+    let coords: [CLLocationCoordinate2D]
+
+    private var rect: MKMapRect {
+        var r = MKMapRect.null
+        for c in coords { r = r.union(MKMapRect(origin: MKMapPoint(c), size: MKMapSize(width: 0, height: 0))) }
+        let pad = max(r.width, r.height) * 0.25 + 400
+        return r.insetBy(dx: -pad, dy: -pad)
+    }
+
+    var body: some View {
+        Map(initialPosition: .rect(rect), interactionModes: [.pan, .zoom]) {
+            MapPolyline(coordinates: coords).stroke(Theme.accent, lineWidth: 4)
+            if let f = coords.first { Marker("Start", coordinate: f).tint(Theme.ink) }
+            if let l = coords.last { Marker("Koniec", coordinate: l).tint(Theme.accent) }
+        }
+        .mapStyle(.standard(emphasis: .muted))
+    }
+}
+
+// MARK: - Krótkie wejście elementów (jednorazowe)
+
+private struct Rise: ViewModifier {
+    let delay: Double
+    @State private var on = false
+    func body(content: Content) -> some View {
+        content.opacity(on ? 1 : 0).offset(y: on ? 0 : 14)
+            .onAppear { withAnimation(.easeOut(duration: 0.5).delay(delay)) { on = true } }
+    }
+}
+extension View { func rise(_ delay: Double = 0) -> some View { modifier(Rise(delay: delay)) } }
 
 // MARK: - Dzień (zbiorczy, rozwijany)
 
@@ -248,7 +295,11 @@ struct DayCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.ink.opacity(0.07)))
         .foregroundStyle(Theme.ink)
         .opacity(settled ? 0.4 : 1)
-        .sheet(item: $editing) { TripEditView(trip: $0).presentationDetents([.medium]) }
+        .sheet(item: $editing) { TripEditView(trip: $0).presentationDetents([.large]) }
+        .onAppear {
+            if UserDefaults.standard.bool(forKey: "openfirst"), editing == nil,
+               Calendar.current.isDateInToday(day) { editing = trips.first { $0.endedAt != nil } }
+        }
     }
 }
 
@@ -262,6 +313,13 @@ struct TripEditView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if trip.route.count > 1 {
+                    Section {
+                        RouteMap(coords: trip.route)
+                            .frame(height: 230)
+                            .listRowInsets(EdgeInsets())
+                    }
+                }
                 Section("Przejazd") {
                     row("Dystans", unit: "km", value: Binding(
                         get: { (trip.meters / 1000 * 10).rounded() / 10 },
@@ -277,7 +335,7 @@ struct TripEditView: View {
                     }
                 }
             }
-            .navigationTitle("Edytuj przejazd")
+            .navigationTitle("Przejazd")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Gotowe") { try? ctx.save(); dismiss() } }
             .scrollContentBackground(.hidden)
