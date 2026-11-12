@@ -26,6 +26,7 @@ class TrackingService : Service(), LocationListener {
     private lateinit var lm: LocationManager
     private val handler = Handler(Looper.getMainLooper())
     private val idle = Runnable { notifyIdle() }
+    private var idleShown = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -39,7 +40,10 @@ class TrackingService : Service(), LocationListener {
 
     @SuppressLint("MissingPermission")
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) { stopTracking(); return START_NOT_STICKY }
+        if (intent?.action == ACTION_STOP) {
+            Tracker.init(this)   // Stop z powiadomienia po ubiciu procesu: Tracker bez init crashowałby na lateinit
+            stopTracking(); return START_NOT_STICKY
+        }
 
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("trip", "Przejazd", NotificationManager.IMPORTANCE_LOW))
@@ -84,8 +88,15 @@ class TrackingService : Service(), LocationListener {
         resetIdle()
     }
 
+    // Na API 26-29 LocationManager woła te metody bez domyślnej implementacji -> AbstractMethodError bez override.
+    @Deprecated("Deprecated in Java")
+    override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
+    override fun onProviderEnabled(provider: String) {}
+    override fun onProviderDisabled(provider: String) {}
+
     // Przypomnienie „zapomniałeś kliknąć Stop": timer w już działającym serwisie, bez dodatkowego GPS-a.
     private fun resetIdle() {
+        if (idleShown) { idleShown = false; getSystemService(NotificationManager::class.java).cancel(2) }
         handler.removeCallbacks(idle)
         handler.postDelayed(idle, 10 * 60 * 1000L)
     }
@@ -101,6 +112,7 @@ class TrackingService : Service(), LocationListener {
             .addAction(stopAction())
             .build()
         nm.notify(2, n)
+        idleShown = true
     }
 
     private fun stopTracking() {

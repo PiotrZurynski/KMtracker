@@ -4,7 +4,9 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.BufferedOutputStream
 import java.io.DataOutputStream
+import java.util.concurrent.Executors
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
@@ -46,9 +48,13 @@ object Tracker {
         app = ctx.applicationContext
         ready = true
         // przejazd przerwany ubiciem apki: domknij go (albo wyrzuć, jeśli pusty)
+        val orphans = ArrayList<String>()
         trips.value = load().mapNotNull {
-            if (it.end == null) (if (it.meters < 50) null else it.copy(end = System.currentTimeMillis())) else it
+            if (it.end == null) {
+                if (it.meters < 50) { orphans.add(it.id); null } else it.copy(end = System.currentTimeMillis())
+            } else it
         }
+        if (orphans.isNotEmpty()) io.execute { orphans.forEach { id -> runCatching { routeFile(id).delete() } } }
         settlements.value = loadSettlements()
         save()
     }
@@ -76,7 +82,7 @@ object Tracker {
     fun begin() {
         if (tracking.value) return   // podwójny Start nie tworzy drugiego przejazdu
         trips.value = listOf(Trip(start = System.currentTimeMillis(), price = price, cons = cons, split = split)) + trips.value
-        liveBuf = ArrayList(); liveRoute.value = emptyList(); unsaved = 0.0
+        liveBuf = ArrayList(); liveRoute.value = emptyList(); unsaved = 0.0; lastPublish = 0L
         tracking.value = true
         save()
     }
@@ -95,8 +101,8 @@ object Tracker {
         trips.value = trips.value.mapNotNull {
             if (it.end == null) (if (it.meters < 50) null else it.copy(end = System.currentTimeMillis())) else it
         }
-        if (open != null && open.meters < 50) routeFile(open.id).delete()
-        liveBuf = ArrayList(); liveRoute.value = emptyList()
+        closeRoute(if (open != null && open.meters < 50) open.id else null)
+        liveBuf = ArrayList(); liveRoute.value = emptyList(); lastPublish = 0L
         tracking.value = false
         save()
     }
@@ -112,7 +118,7 @@ object Tracker {
 
     fun delete(id: String) {
         trips.value = trips.value.filterNot { it.id == id && it.end != null }
-        routeFile(id).delete()
+        io.execute { runCatching { routeFile(id).delete() } }
         save()
     }
 
@@ -129,15 +135,45 @@ object Tracker {
         return File(dir, "$id.bin")
     }
 
+    // Zapis trasy: jeden otwarty, buforowany strumień na przejazd, obsługiwany wyłącznie przez jeden wątek IO
+    // (zero I/O na głównym wątku). Flush co 8 punktów – po ubiciu apki tracimy najwyżej kilka ostatnich punktów.
+    private val io = Executors.newSingleThreadExecutor()
+    private var out: DataOutputStream? = null     // tylko wątek io
+    private var outId: String? = null             // tylko wątek io
+    private var pending = 0                       // tylko wątek io
+
     fun addPoint(lat: Double, lon: Double) {
         val cur = trips.value.firstOrNull { it.end == null } ?: return
-        runCatching {
-            DataOutputStream(FileOutputStream(routeFile(cur.id), true)).use { it.writeDouble(lat); it.writeDouble(lon) }
+        val id = cur.id
+        io.execute {
+            runCatching {
+                val existing = out
+                val o: DataOutputStream = if (existing != null && outId == id) existing else {
+                    existing?.close()
+                    DataOutputStream(BufferedOutputStream(FileOutputStream(routeFile(id), true), 4096))
+                        .also { out = it; outId = id; pending = 0 }
+                }
+                o.writeDouble(lat); o.writeDouble(lon)
+                if (++pending >= 8) { o.flush(); pending = 0 }
+            }
         }
         liveBuf.add(Pt(lat, lon))
-        if (liveBuf.size > 600) liveBuf = ArrayList(liveBuf.filterIndexed { i, _ -> i % 2 == 0 })
+        if (liveBuf.size > 600) {
+            val thin = ArrayList<Pt>(liveBuf.size / 2 + 1)
+            for (i in liveBuf.indices step 2) thin.add(liveBuf[i])
+            liveBuf = thin
+        }
         val now = System.currentTimeMillis()
-        if (now - lastPublish > 4000) { lastPublish = now; liveRoute.value = liveBuf.toList() }
+        if (now - lastPublish > 4000) { lastPublish = now; liveRoute.value = ArrayList(liveBuf) }
+    }
+
+    /** Zamyka strumień trasy (po zapisaniu zbuforowanych punktów); opcjonalnie kasuje plik. */
+    private fun closeRoute(deleteId: String?) {
+        io.execute {
+            runCatching { out?.close() }
+            out = null; outId = null; pending = 0
+            if (deleteId != null) runCatching { routeFile(deleteId).delete() }
+        }
     }
 
     fun readRoute(id: String, limit: Int = 1500): List<Pt> = runCatching {

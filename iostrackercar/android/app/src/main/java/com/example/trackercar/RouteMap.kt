@@ -25,6 +25,8 @@ fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier) {
             userAgentValue = ctx.packageName                       // wymagane przez serwery OSM
             osmdroidBasePath = File(ctx.cacheDir, "osm")           // bez uprawnień do pamięci
             osmdroidTileCache = File(ctx.cacheDir, "osm/tiles")
+            tileFileSystemCacheMaxBytes = 100L * 1024 * 1024       // domyślnie 600 MB – za dużo
+            tileFileSystemCacheTrimBytes = 80L * 1024 * 1024
         }
         MapView(ctx).apply {
             setTileSource(TileSourceFactory.MAPNIK)
@@ -38,7 +40,11 @@ fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier) {
         map.onResume()
         onDispose { map.onPause(); map.onDetach() }
     }
+    // update{} odpala się przy każdej rekompozycji rodzica – przebudowuj overlaye tylko dla nowej listy punktów
+    val applied = remember { arrayOfNulls<Any>(1) }
     AndroidView(factory = { map }, modifier = modifier, update = { m ->
+        if (applied[0] === points) return@AndroidView
+        applied[0] = points
         m.overlays.clear()
         val gp = points.map { GeoPoint(it.lat, it.lon) }
         if (gp.size > 1) {

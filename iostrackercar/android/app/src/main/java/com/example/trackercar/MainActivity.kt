@@ -58,6 +58,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -99,6 +100,21 @@ private fun t(size: Int, w: Int = 400, c: Color = Ink) =
 private val pl = Locale("pl", "PL")
 private fun km(m: Double) = String.format(pl, "%.1f", m / 1000)
 private fun zl(v: Double) = String.format(pl, "%.2f zł", v)
+
+// Formatery dat współdzielone (tworzenie SimpleDateFormat jest drogie); używane tylko z głównego wątku.
+private val fmtKey = SimpleDateFormat("yyyy-MM-dd", pl)
+private val fmtMonthKey = SimpleDateFormat("yyyy-MM", pl)
+private val fmtMonthLabel = SimpleDateFormat("LLL", pl)
+private val fmtHm = SimpleDateFormat("HH:mm", pl)
+private val fmtDay = SimpleDateFormat("EEEE d MMMM", pl)
+private val fmtSettle = SimpleDateFormat("d MMMM yyyy, HH:mm", pl)
+// start przejazdu się nie zmienia, więc klucze dnia/miesiąca liczymy raz na przejazd
+private val dayKeyCache = HashMap<String, String>()
+private val monthKeyCache = HashMap<String, String>()
+private fun dayKey(t: Trip) = dayKeyCache.getOrPut(t.id) { fmtKey.format(Date(t.start)) }
+private fun monthKey(t: Trip) = monthKeyCache.getOrPut(t.id) { fmtMonthKey.format(Date(t.start)) }
+
+private data class Month(val key: String, val label: String, val km: Double, val cost: Double, val count: Int)
 
 private val isXiaomi = Build.MANUFACTURER.lowercase().let { it.contains("xiaomi") || it.contains("redmi") || it.contains("poco") }
 
@@ -253,7 +269,7 @@ private fun HomeScreen(
 /** Minimalistyczny przycisk: krótka fala i rysowanie obrysu po każdym przełączeniu (kończą się same). */
 @Composable
 private fun StartButton(tracking: Boolean, onClick: () -> Unit) {
-    val fill by animateColorAsState(if (tracking) Accent else Color.Transparent, tween(250), label = "fill")
+    val fill = animateColorAsState(if (tracking) Accent else Color.Transparent, tween(250), label = "fill")
     val ripple = remember { Animatable(1f) }
     val draw = remember { Animatable(1f) }
     var first by remember { mutableStateOf(true) }
@@ -268,7 +284,7 @@ private fun StartButton(tracking: Boolean, onClick: () -> Unit) {
         Box(Modifier.size(170.dp)
             .graphicsLayer { scaleX = 1f + .45f * ripple.value; scaleY = 1f + .45f * ripple.value; alpha = .7f * (1f - ripple.value) }
             .border(2.dp, Accent, CircleShape))
-        Box(Modifier.size(170.dp).clip(CircleShape).background(fill))
+        Box(Modifier.size(170.dp).clip(CircleShape).drawBehind { drawRect(fill.value) })
         Canvas(Modifier.size(170.dp)) {
             val w = 2.dp.toPx()
             drawArc(ring, -90f, 360f * draw.value, false, topLeft = Offset(w / 2, w / 2),
@@ -295,8 +311,7 @@ private fun TripsScreen(trips: List<Trip>) {
     var editing by remember { mutableStateOf<Trip?>(null) }
     val settlements by Tracker.settlements.collectAsState()
     val days = remember(trips) {
-        val fmt = SimpleDateFormat("yyyy-MM-dd", pl)
-        trips.groupBy { fmt.format(Date(it.start)) }.toSortedMap(compareByDescending<String> { it }).entries.toList()
+        trips.groupBy { dayKey(it) }.toSortedMap(compareByDescending<String> { it }).entries.toList()
     }
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp)) {
         item {
@@ -311,7 +326,7 @@ private fun TripsScreen(trips: List<Trip>) {
         } else {
             if (settlements.isEmpty()) item { Text("Brak rozliczeń", style = t(15, 400, Ink.copy(alpha = .5f)), modifier = Modifier.padding(top = 40.dp)) }
             items(settlements, key = { it.date }) { s ->
-                val fmt = remember { SimpleDateFormat("d MMMM yyyy, HH:mm", pl) }
+                val fmt = fmtSettle
                 Row(Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Card).padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween) {
                     Column {
@@ -327,18 +342,26 @@ private fun TripsScreen(trips: List<Trip>) {
     editing?.let { cur ->
         // aktualna wersja przejazdu z listy (po edycji / zakończeniu)
         val live = trips.firstOrNull { it.id == cur.id }
-        if (live == null) editing = null else TripDialog(live) { editing = null }
+        if (live == null) {
+            LaunchedEffect(Unit) { editing = null }   // przejazd zniknął (usunięty) – zamknij dialog bez zapisu stanu w kompozycji
+        } else {
+            TripDialog(live) { editing = null }
+        }
     }
 }
 
 @Composable
 private fun DayCard(list: List<Trip>, onTrip: (Trip) -> Unit) {
     var open by remember { mutableStateOf(false) }
-    val hm = remember { SimpleDateFormat("HH:mm", pl) }
-    val dayFmt = remember { SimpleDateFormat("EEEE d MMMM", pl) }
+    val hm = fmtHm
+    val dayFmt = fmtDay
+    val sumM = remember(list) { list.sumOf { it.meters } }
+    val sumC = remember(list) { list.sumOf { it.cost } }
+    val allSettled = remember(list) { list.all { it.settled } }
+    val sorted = remember(list) { list.sortedByDescending { it.start } }
     Column(
         Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Card)
-            .alpha(if (list.all { it.settled }) .4f else 1f)
+            .alpha(if (allSettled) .4f else 1f)
     ) {
         Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             Column {
@@ -346,11 +369,11 @@ private fun DayCard(list: List<Trip>, onTrip: (Trip) -> Unit) {
                 Text("${list.size} ${if (list.size == 1) "przejazd" else "przejazdy"}", style = t(13, 400, Ink.copy(alpha = .5f)))
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("${km(list.sumOf { it.meters })} km", style = t(18, 600))
-                Text(zl(list.sumOf { it.cost }), style = t(14, 400, Accent))
+                Text("${km(sumM)} km", style = t(18, 600))
+                Text(zl(sumC), style = t(14, 400, Accent))
             }
         }
-        if (open) list.sortedByDescending { it.start }.forEach { tr ->
+        if (open) sorted.forEach { tr ->
             Row(Modifier.fillMaxWidth().clickable { onTrip(tr) }.padding(horizontal = 16.dp, vertical = 10.dp),
                 horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${hm.format(Date(tr.start))}–${tr.end?.let { hm.format(Date(it)) } ?: "trwa"}", style = t(14, 400, Ink.copy(alpha = .6f)))
@@ -362,10 +385,11 @@ private fun DayCard(list: List<Trip>, onTrip: (Trip) -> Unit) {
 
 @Composable
 private fun TripDialog(trip: Trip, onClose: () -> Unit) {
-    var kmText by remember { mutableStateOf(String.format(Locale.US, "%.1f", trip.meters / 1000)) }
-    var priceText by remember { mutableStateOf(trip.price.toString()) }
-    var consText by remember { mutableStateOf(trip.cons.toString()) }
-    var split by remember { mutableIntStateOf(trip.split) }
+    // klucz ongoing: po zakończeniu trwającego przejazdu pola odświeżą się o końcowe wartości
+    var kmText by remember(trip.id, trip.end == null) { mutableStateOf(String.format(Locale.US, "%.1f", trip.meters / 1000)) }
+    var priceText by remember(trip.id, trip.end == null) { mutableStateOf(trip.price.toString()) }
+    var consText by remember(trip.id, trip.end == null) { mutableStateOf(trip.cons.toString()) }
+    var split by remember(trip.id, trip.end == null) { mutableIntStateOf(trip.split) }
     val route by produceState<List<Pt>>(emptyList(), trip.id) { value = withContext(Dispatchers.IO) { Tracker.readRoute(trip.id) } }
     fun num(s: String) = s.replace(',', '.').toDoubleOrNull()
     val ongoing = trip.end == null
@@ -416,16 +440,14 @@ private fun TripDialog(trip: Trip, onClose: () -> Unit) {
 @Composable
 private fun StatsScreen(trips: List<Trip>) {
     val finished = remember(trips) { trips.filter { it.end != null } }
-    data class Month(val key: String, val label: String, val km: Double, val cost: Double, val count: Int)
     val months = remember(finished) {
-        val keyF = SimpleDateFormat("yyyy-MM", pl); val labF = SimpleDateFormat("LLL", pl)
-        finished.groupBy { keyF.format(Date(it.start)) }.toSortedMap().entries.map { (k, v) ->
-            Month(k, labF.format(Date(v.first().start)), v.sumOf { it.meters } / 1000, v.sumOf { it.cost }, v.size)
+        finished.groupBy { monthKey(it) }.toSortedMap().entries.map { (k, v) ->
+            Month(k, fmtMonthLabel.format(Date(v.first().start)), v.sumOf { it.meters } / 1000, v.sumOf { it.cost }, v.size)
         }.takeLast(6)
     }
-    val cur = months.firstOrNull { it.key == SimpleDateFormat("yyyy-MM", pl).format(Date()) }
-    val longest = finished.maxOfOrNull { it.meters } ?: 0.0
-    val avg = if (finished.isEmpty()) 0.0 else finished.sumOf { it.meters } / finished.size
+    val cur = remember(months) { val nowKey = fmtMonthKey.format(Date()); months.firstOrNull { it.key == nowKey } }
+    val longest = remember(finished) { finished.maxOfOrNull { it.meters } ?: 0.0 }
+    val avg = remember(finished) { if (finished.isEmpty()) 0.0 else finished.sumOf { it.meters } / finished.size }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp)) {
         Text("STATYSTYKI", style = t(14, 500, Ink.copy(alpha = .55f)), letterSpacing = 5.sp, modifier = Modifier.padding(top = 16.dp, bottom = 16.dp))
@@ -445,7 +467,7 @@ private fun StatsScreen(trips: List<Trip>) {
             if (months.isEmpty()) {
                 Text("Brak danych", style = t(15, 400, Ink.copy(alpha = .5f)), modifier = Modifier.padding(vertical = 30.dp))
             } else {
-                val max = months.maxOf { it.km }.coerceAtLeast(1.0)
+                val max = remember(months) { months.maxOf { it.km }.coerceAtLeast(1.0) }
                 Canvas(Modifier.fillMaxWidth().height(160.dp)) {
                     val slot = size.width / months.size
                     val barW = slot * 0.5f
