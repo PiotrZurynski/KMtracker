@@ -24,9 +24,13 @@ enum FuelPriceService {
 
     static func fetch() async throws -> Double {
         guard !Prefs.sourceURL.isEmpty, !Prefs.sourceRegex.isEmpty else { throw Failure.notConfigured }
-        guard let url = URL(string: Prefs.sourceURL), url.scheme == "https" else { throw Failure.badURL }
-        let (data, _) = try await session.data(from: url)
-        guard data.count < 2_000_000, let html = String(data: data, encoding: .utf8),
+        let src = Prefs.sourceURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: src), url.scheme?.lowercased() == "https", url.host?.isEmpty == false,
+              Prefs.sourceRegex.count <= 300 else { throw Failure.badURL }
+        let (data, response) = try await session.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) { throw Failure.parse }
+        guard data.count < 2_000_000,
+              let html = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1),
               let re = try? NSRegularExpression(pattern: Prefs.sourceRegex),
               let m = re.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
               m.numberOfRanges > 1, let r = Range(m.range(at: 1), in: html),

@@ -75,7 +75,7 @@ struct SettingsView: View {
     }
 
     private func save() {
-        if price > 0 { Prefs.price = price }
+        if price > 0, price != Prefs.price { Prefs.price = price }   // data ceny zmienia się tylko przy realnej zmianie
         if cons > 0 { Prefs.consumption = cons }
         Prefs.split = split
         Prefs.sourceURL = url

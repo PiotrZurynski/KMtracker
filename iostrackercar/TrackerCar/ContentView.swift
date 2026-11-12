@@ -8,6 +8,7 @@ struct ContentView: View {
         TabView(selection: $tab) {
             HomeView().tabItem { Label("Start", systemImage: "car.fill") }.tag(0)
             TripsView().tabItem { Label("Przejazdy", systemImage: "list.bullet") }.tag(1)
+            StatsView().tabItem { Label("Statystyki", systemImage: "chart.bar.fill") }.tag(2)
         }
         .tint(Theme.accent)
         .font(Theme.f(16))
@@ -42,6 +43,7 @@ struct TripsView: View {
                     }.padding(.top, 12)
 
                     if tab == 0 {
+                        let days = self.days   // raz na render (wcześniej grupowanie liczone dwukrotnie)
                         if days.isEmpty { empty("Brak przejazdów") }
                         ForEach(days, id: \.day) { DayCard(day: $0.day, trips: $0.trips) }
                     } else {
@@ -87,11 +89,11 @@ struct TripsView: View {
 struct HomeView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(LocationTracker.self) private var tracker
-    @Query(sort: \Trip.startedAt, order: .reverse) private var trips: [Trip]
+    // Tylko nierozliczone (wcześniej: wszystkie przejazdy + filtrowanie w body).
+    @Query(filter: #Predicate<Trip> { !$0.settled }) private var owed: [Trip]
     @State private var showSettings = false
     @State private var confirmSettle = false
 
-    private var owed: [Trip] { trips.filter { !$0.settled } }
     private var owedMeters: Double { owed.reduce(0) { $0 + $1.meters } }
     private var owedCost: Double { owed.reduce(0) { $0 + $1.cost } }
 
@@ -105,6 +107,9 @@ struct HomeView: View {
                     StartStopButton(isOn: tracker.isTracking) {
                         tracker.isTracking ? tracker.stop() : tracker.requestAndStart()
                     }.rise(0.12)
+                    if tracker.isTracking, tracker.current != nil {
+                        LiveMap().rise()
+                    }
                     if tracker.authorization == .denied || tracker.authorization == .restricted {
                         Text("Brak zgody na lokalizację. Włącz ją w Ustawieniach iOS.")
                             .font(Theme.f(14)).foregroundStyle(Theme.accent)
@@ -202,14 +207,24 @@ struct StartStopButton: View {
 
 // MARK: - Mapa trasy
 
-struct RouteMap: View {
+struct RouteMap: View, Equatable {
     let coords: [CLLocationCoordinate2D]
+    private let rect: MKMapRect
 
-    private var rect: MKMapRect {
+    init(coords: [CLLocationCoordinate2D]) {
+        self.coords = coords
         var r = MKMapRect.null
         for c in coords { r = r.union(MKMapRect(origin: MKMapPoint(c), size: MKMapSize(width: 0, height: 0))) }
         let pad = max(r.width, r.height) * 0.25 + 400
-        return r.insetBy(dx: -pad, dy: -pad)
+        self.rect = r.insetBy(dx: -pad, dy: -pad)
+    }
+
+    // Trasa po zakończeniu jest niezmienna – nie przebudowuj mapy przy każdym renderze rodzica.
+    static func == (a: RouteMap, b: RouteMap) -> Bool {
+        a.coords.count == b.coords.count
+            && a.coords.first?.latitude == b.coords.first?.latitude
+            && a.coords.last?.latitude == b.coords.last?.latitude
+            && a.coords.last?.longitude == b.coords.last?.longitude
     }
 
     var body: some View {
@@ -219,6 +234,23 @@ struct RouteMap: View {
             if let l = coords.last { Marker("Koniec", coordinate: l).tint(Theme.accent) }
         }
         .mapStyle(.standard(emphasis: .muted))
+    }
+}
+
+// MARK: - Mapa na żywo (tylko w trakcie przejazdu)
+
+struct LiveMap: View {
+    // Czyta przerzedzoną trasę z trackera (odświeżaną co ≥8 s) zamiast dekodować Trip.route przy każdym renderze.
+    @Environment(LocationTracker.self) private var tracker
+    var body: some View {
+        let coords = tracker.liveRoute
+        Map(initialPosition: .userLocation(fallback: .automatic), interactionModes: []) {
+            UserAnnotation()
+            if coords.count >= 2 { MapPolyline(coordinates: coords).stroke(Theme.accent, lineWidth: 4) }
+        }
+        .mapStyle(.standard(emphasis: .muted))
+        .frame(height: 220)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
@@ -281,8 +313,11 @@ struct DayCard: View {
                         .contentShape(Rectangle())
                         .onTapGesture { if t.endedAt != nil { editing = t } }
                         .contextMenu {
-                            Button(role: .destructive) { ctx.delete(t); try? ctx.save() } label: {
-                                Label("Usuń przejazd", systemImage: "trash")
+                            // trwającego przejazdu nie wolno usuwać (tracker nadal na nim pracuje)
+                            if t.endedAt != nil {
+                                Button(role: .destructive) { ctx.delete(t); try? ctx.save() } label: {
+                                    Label("Usuń przejazd", systemImage: "trash")
+                                }
                             }
                         }
                         Divider().overlay(Theme.ink.opacity(0.08))
@@ -309,13 +344,15 @@ struct TripEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var ctx
     @Bindable var trip: Trip
+    @State private var coords: [CLLocationCoordinate2D] = []   // dekodowane raz, nie przy każdym znaku w polu
 
     var body: some View {
         NavigationStack {
             Form {
-                if trip.route.count > 1 {
+                if coords.count > 1 {
                     Section {
-                        RouteMap(coords: trip.route)
+                        RouteMap(coords: coords)
+                            .equatable()
                             .frame(height: 230)
                             .listRowInsets(EdgeInsets())
                     }
@@ -326,6 +363,7 @@ struct TripEditView: View {
                         set: { trip.meters = max(0, $0) * 1000 }))
                     row("Cena za litr", unit: "zł", value: $trip.pricePerLiter)
                     row("Spalanie", unit: "l/100 km", value: $trip.consumption)
+                    Stepper(trip.split == 1 ? "Płacę sam" : "Dzielone na \(trip.split)", value: $trip.split, in: 1...6)
                 }
                 Section {
                     HStack {
@@ -335,6 +373,7 @@ struct TripEditView: View {
                     }
                 }
             }
+            .task { if coords.isEmpty { coords = downsampled(trip.route, limit: 1500) } }
             .navigationTitle("Przejazd")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { Button("Gotowe") { try? ctx.save(); dismiss() } }

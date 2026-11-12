@@ -39,10 +39,17 @@ class TrackingService : Service(), LocationListener {
             if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION else 0)
 
         Tracker.init(this)
+        if (Tracker.tracking.value) return START_NOT_STICKY   // powtórny Start – już liczymy
         Tracker.begin()
         last = null
         lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 15f, this)
+        try {
+            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000L, 15f, this)
+        } catch (e: SecurityException) {      // cofnięta zgoda
+            stopTracking()
+        } catch (e: IllegalArgumentException) { // brak dostawcy GPS
+            stopTracking()
+        }
         return START_NOT_STICKY
     }
 

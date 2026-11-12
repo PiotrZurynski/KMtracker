@@ -39,9 +39,19 @@ extension Trip {
     }
 
     func append(_ c: CLLocationCoordinate2D) {
-        var a = [c.latitude, c.longitude]
-        a.withUnsafeBytes { routeData.append(contentsOf: $0) }
+        var lat = c.latitude, lon = c.longitude
+        withUnsafeBytes(of: &lat) { routeData.append(contentsOf: $0) }
+        withUnsafeBytes(of: &lon) { routeData.append(contentsOf: $0) }
     }
+}
+
+/// Równomiernie przerzedza trasę do ~`limit` punktów (zawsze zachowuje pierwszy i ostatni).
+func downsampled(_ a: [CLLocationCoordinate2D], limit: Int) -> [CLLocationCoordinate2D] {
+    guard limit > 1, a.count > limit else { return a }
+    let step = (a.count + limit - 1) / limit
+    var out = Array(stride(from: 0, to: a.count, by: step).map { a[$0] })
+    if let l = a.last, out.count > 0, (out.last!.latitude != l.latitude || out.last!.longitude != l.longitude) { out.append(l) }
+    return out
 }
 
 /// Zapis dokonanego rozliczenia (historia).

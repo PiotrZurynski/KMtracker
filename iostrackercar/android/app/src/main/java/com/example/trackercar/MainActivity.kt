@@ -41,9 +41,11 @@ private val Accent = Color(0xFFE9204F)
 private val Ink = Color(0xFFF3F3F3)
 private val Card = Ink.copy(alpha = 0.06f)
 
-private fun osw(w: Int) = FontFamily(
-    Font(R.font.oswald, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
-)
+// Cache rodzin czcionek: t() jest wołane w composition, nie twórz FontFamily przy każdej rekompozycji.
+private val fontCache = HashMap<Int, FontFamily>()
+private fun osw(w: Int): FontFamily = fontCache.getOrPut(w) {
+    FontFamily(Font(R.font.oswald, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w))))
+}
 private fun t(size: Int, w: Int = 400, c: Color = Ink) =
     TextStyle(fontFamily = osw(w), fontSize = size.sp, color = c)
 
@@ -83,12 +85,16 @@ fun App() {
         else launcher.launch(perms)
     }
 
-    val owed = trips.filter { !it.settled }
-    val owedM = owed.sumOf { it.meters }
-    val owedC = owed.sumOf { it.cost }
-    val days = trips.filter { it.end != null || it.id == trips.firstOrNull { x -> x.end == null }?.id }
-        .groupBy { SimpleDateFormat("yyyy-MM-dd", pl).format(Date(it.start)) }
-        .toSortedMap(compareByDescending<String> { it })
+    val owed = remember(trips) { trips.filter { !it.settled } }
+    val owedM = remember(owed) { owed.sumOf { it.meters } }
+    val owedC = remember(owed) { owed.sumOf { it.cost } }
+    val days = remember(trips) {
+        val fmt = SimpleDateFormat("yyyy-MM-dd", pl)   // jeden formatter na przeliczenie (nie na każdy przejazd)
+        // trwający przejazd też trafia na listę (end == null), więc wystarczy zwykłe grupowanie
+        trips.groupBy { fmt.format(Date(it.start)) }
+            .toSortedMap(compareByDescending<String> { it })
+            .entries.toList()
+    }
 
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -121,7 +127,7 @@ fun App() {
                 }
                 Spacer(Modifier.height(24.dp))
             }
-            items(days.entries.toList()) { (day, list) -> DayCard(day, list) }
+            items(days, key = { it.key }) { (day, list) -> DayCard(day, list) }
             item { Spacer(Modifier.height(40.dp)) }
         }
     }
@@ -138,7 +144,7 @@ fun App() {
 @Composable
 private fun DayCard(day: String, list: List<Trip>) {
     var open by remember { mutableStateOf(false) }
-    val fmt = SimpleDateFormat("HH:mm", pl)
+    val fmt = remember { SimpleDateFormat("HH:mm", pl) }
     Column(
         Modifier.fillMaxWidth().padding(bottom = 10.dp).clip(RoundedCornerShape(14.dp)).background(Card)
             .alpha(if (list.all { it.settled }) .4f else 1f)

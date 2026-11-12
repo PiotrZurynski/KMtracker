@@ -40,25 +40,33 @@ object Tracker {
     }
 
     private val prefs get() = app.getSharedPreferences("prefs", Context.MODE_PRIVATE)
+    // Double jako String (Float psuł wartości: 6.19 -> 6.190000057...). Stare klucze Float zostają jako fallback.
+    private fun getD(key: String, def: Double): Double =
+        prefs.getString("${key}_d", null)?.toDoubleOrNull()
+            ?: runCatching { Math.round(prefs.getFloat(key, def.toFloat()) * 100.0) / 100.0 }.getOrDefault(def)
+    private fun setD(key: String, v: Double) { prefs.edit().putString("${key}_d", v.toString()).apply() }
     var price: Double
-        get() = prefs.getFloat("price", 6.0f).toDouble()
-        set(v) { prefs.edit().putFloat("price", v.toFloat()).apply() }
+        get() = getD("price", 6.0)
+        set(v) { setD("price", v) }
     var cons: Double
-        get() = prefs.getFloat("cons", 7.0f).toDouble()
-        set(v) { prefs.edit().putFloat("cons", v.toFloat()).apply() }
+        get() = getD("cons", 7.0)
+        set(v) { setD("cons", v) }
     var split: Int
         get() = prefs.getInt("split", 2)
         set(v) { prefs.edit().putInt("split", v.coerceAtLeast(1)).apply() }
 
     fun begin() {
+        if (tracking.value) return   // podwójny Start nie tworzy drugiego przejazdu
         trips.value = listOf(Trip(start = System.currentTimeMillis(), price = price, cons = cons, split = split)) + trips.value
         tracking.value = true
         save()
     }
 
     fun add(meters: Double) {
-        val cur = trips.value.firstOrNull { it.end == null } ?: return
-        trips.value = trips.value.map { if (it.id == cur.id) it.copy(meters = it.meters + meters) else it }
+        val list = trips.value
+        val i = list.indexOfFirst { it.end == null }
+        if (i < 0) return
+        trips.value = list.toMutableList().also { it[i] = list[i].copy(meters = list[i].meters + meters) }
         unsaved += meters
         if (unsaved >= 100) { save(); unsaved = 0.0 }
     }
@@ -79,12 +87,20 @@ object Tracker {
     fun delete(id: String) { trips.value = trips.value.filterNot { it.id == id }; save() }
 
     // --- zapis (JSON w SharedPreferences prywatnych dla apki) ---
+    // Zakończone przejazdy są niezmienne (instancje), więc ich JSON jest cache'owany –
+    // przy zapisie co ~100 m serializowany jest praktycznie tylko trwający przejazd.
+    private var jsonCache = java.util.IdentityHashMap<Trip, JSONObject>()
+
     private fun save() {
         val arr = JSONArray()
+        val next = java.util.IdentityHashMap<Trip, JSONObject>()
         trips.value.forEach {
-            arr.put(JSONObject().put("id", it.id).put("start", it.start).put("end", it.end ?: JSONObject.NULL)
-                .put("m", it.meters).put("p", it.price).put("c", it.cons).put("s", it.split).put("x", it.settled))
+            val o = jsonCache[it] ?: JSONObject().put("id", it.id).put("start", it.start).put("end", it.end ?: JSONObject.NULL)
+                .put("m", it.meters).put("p", it.price).put("c", it.cons).put("s", it.split).put("x", it.settled)
+            if (it.end != null) next[it] = o
+            arr.put(o)
         }
+        jsonCache = next
         prefs.edit().putString("trips", arr.toString()).apply()
     }
 
