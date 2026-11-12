@@ -23,3 +23,19 @@ final class Trip {
         meters / 1000 * consumption / 100 * pricePerLiter / Double(max(1, split))
     }
 }
+
+/// Zapis dokonanego rozliczenia (historia).
+@Model
+final class Settlement {
+    var id: UUID = UUID()
+    var date: Date = Date()
+    var meters: Double = 0
+    var amount: Double = 0
+    var tripCount: Int = 0
+
+    init(meters: Double, amount: Double, tripCount: Int) {
+        self.meters = meters
+        self.amount = amount
+        self.tripCount = tripCount
+    }
+}

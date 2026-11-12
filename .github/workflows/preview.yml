@@ -1,0 +1,41 @@
+name: Preview screenshots
+on:
+  workflow_dispatch:
+
+jobs:
+  preview:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: iostrackercar
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate
+      - name: Build for simulator
+        run: |
+          xcodebuild -project TrackerCar.xcodeproj -scheme TrackerCar \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO build
+      - name: Screenshots
+        run: |
+          D=$(xcrun simctl list devices available | grep -E "iPhone .* Pro \(" | head -1 | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          if [ -z "$D" ]; then D=$(xcrun simctl list devices available | grep iPhone | head -1 | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}'); fi
+          echo "Device: $D"
+          xcrun simctl boot $D
+          xcrun simctl bootstatus $D -b
+          xcrun simctl install $D build/Build/Products/Debug-iphonesimulator/TrackerCar.app
+          xcrun simctl privacy $D grant location com.example.trackercar
+          mkdir shots
+          shot() { xcrun simctl terminate $D com.example.trackercar || true; xcrun simctl launch $D com.example.trackercar "${@:2}"; sleep 5; xcrun simctl io $D screenshot "shots/$1.png"; }
+          shot 1-start -demo -tab 0
+          shot 2-przejazdy -tab 1
+          shot 3-przejazdy-rozwiniete -tab 1 -expand YES
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: iostrackercar/shots

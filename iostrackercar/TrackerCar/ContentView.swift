@@ -2,6 +2,75 @@ import SwiftUI
 import SwiftData
 
 struct ContentView: View {
+    @AppStorage("tab") private var tab = 0   // ustawiane też argumentem -tab w podglądzie
+    var body: some View {
+        TabView(selection: $tab) {
+            HomeView().tabItem { Label("Start", systemImage: "car.fill") }.tag(0)
+            TripsView().tabItem { Label("Przejazdy", systemImage: "list.bullet") }.tag(1)
+        }
+        .tint(Theme.accent)
+    }
+}
+
+// MARK: - Zakładka Przejazdy
+
+struct TripsView: View {
+    @Environment(LocationTracker.self) private var tracker
+    @Query(sort: \Trip.startedAt, order: .reverse) private var trips: [Trip]
+    @Query(sort: \Settlement.date, order: .reverse) private var settlements: [Settlement]
+    @State private var tab = 0
+
+    private var days: [(day: Date, trips: [Trip])] {
+        Dictionary(grouping: trips.filter { $0.endedAt != nil || $0.id == tracker.current?.id }) {
+            Calendar.current.startOfDay(for: $0.startedAt)
+        }
+        .map { (day: $0.key, trips: $0.value.sorted { $0.startedAt > $1.startedAt }) }
+        .sorted { $0.day > $1.day }
+    }
+
+    var body: some View {
+        ZStack {
+            Theme.bg.ignoresSafeArea()
+            ScrollView {
+                VStack(spacing: 16) {
+                    Picker("", selection: $tab) {
+                        Text("Przejazdy").tag(0)
+                        Text("Rozliczenia").tag(1)
+                    }.pickerStyle(.segmented).padding(.top, 8)
+
+                    if tab == 0 {
+                        if days.isEmpty { empty("Brak przejazdów") }
+                        ForEach(days, id: \.day) { DayCard(day: $0.day, trips: $0.trips) }
+                    } else {
+                        if settlements.isEmpty { empty("Brak rozliczeń") }
+                        ForEach(settlements) { s in
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(s.date.formatted(date: .long, time: .shortened))
+                                        .font(.subheadline.weight(.semibold))
+                                    Text("\(s.tripCount) przejazdów · \(Fmt.km(s.meters)) km")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                Text(Fmt.zl(s.amount)).font(.headline).foregroundStyle(Theme.accent).monospacedDigit()
+                            }
+                            .padding(16)
+                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        }
+                    }
+                }.padding(.horizontal, 20).padding(.bottom, 40)
+            }
+        }
+    }
+
+    private func empty(_ t: String) -> some View {
+        Text(t).font(.footnote).foregroundStyle(.secondary).padding(.top, 40)
+    }
+}
+
+// MARK: - Zakładka Start
+
+struct HomeView: View {
     @Environment(\.modelContext) private var ctx
     @Environment(LocationTracker.self) private var tracker
     @Query(sort: \Trip.startedAt, order: .reverse) private var trips: [Trip]
@@ -11,14 +80,6 @@ struct ContentView: View {
     private var owed: [Trip] { trips.filter { !$0.settled } }
     private var owedMeters: Double { owed.reduce(0) { $0 + $1.meters } }
     private var owedCost: Double { owed.reduce(0) { $0 + $1.cost } }
-
-    private var days: [(day: Date, trips: [Trip])] {
-        Dictionary(grouping: trips.filter { $0.endedAt != nil || $0.id == tracker.current?.id }) {
-            Calendar.current.startOfDay(for: $0.startedAt)
-        }
-        .map { (day: $0.key, trips: $0.value.sorted { $0.startedAt > $1.startedAt }) }
-        .sorted { $0.day > $1.day }
-    }
 
     var body: some View {
         ZStack {
@@ -35,19 +96,27 @@ struct ContentView: View {
                             .font(.footnote).foregroundStyle(Theme.stop)
                     }
                     if !owed.isEmpty && !tracker.isTracking {
-                        Button("Rozliczone ✓") { confirmSettle = true }
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.white.opacity(0.6))
+                        Button { confirmSettle = true } label: {
+                            Text("ROZLICZ \(Fmt.zl(owedCost))")
+                                .font(.subheadline.weight(.heavy)).tracking(2)
+                                .padding(.horizontal, 28).padding(.vertical, 14)
+                                .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6)))
+                                .foregroundStyle(Theme.accent)
+                        }
                     }
-                    list
                 }
                 .padding(.horizontal, 20).padding(.bottom, 40)
             }
         }
         .onAppear { tracker.attach(ctx) }
         .sheet(isPresented: $showSettings) { SettingsView().presentationDetents([.medium, .large]) }
-        .confirmationDialog("Oznaczyć wszystkie przejazdy jako rozliczone?", isPresented: $confirmSettle) {
-            Button("Rozlicz") { owed.forEach { $0.settled = true }; try? ctx.save() }
+        .confirmationDialog("Rozliczyć \(Fmt.zl(owedCost)) (\(Fmt.km(owedMeters)) km)?", isPresented: $confirmSettle, titleVisibility: .visible) {
+            Button("Rozlicz") {
+                ctx.insert(Settlement(meters: owedMeters, amount: owedCost, tripCount: owed.count))
+                owed.forEach { $0.settled = true }
+                try? ctx.save()
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            }
         }
     }
 
@@ -79,11 +148,6 @@ struct ContentView: View {
         }.padding(.top, 12)
     }
 
-    private var list: some View {
-        VStack(spacing: 10) {
-            ForEach(days, id: \.day) { DayCard(day: $0.day, trips: $0.trips) }
-        }
-    }
 }
 
 // MARK: - Start / Stop
@@ -127,7 +191,7 @@ struct DayCard: View {
     @Environment(\.modelContext) private var ctx
     let day: Date
     let trips: [Trip]
-    @State private var open = false
+    @State private var open = UserDefaults.standard.bool(forKey: "expand")
 
     private var meters: Double { trips.reduce(0) { $0 + $1.meters } }
     private var cost: Double { trips.reduce(0) { $0 + $1.cost } }
