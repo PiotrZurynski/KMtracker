@@ -55,6 +55,10 @@ object Tracker {
         get() = prefs.getInt("split", 2)
         set(v) { prefs.edit().putInt("split", v.coerceAtLeast(1)).apply() }
 
+    var hintSeen: Boolean
+        get() = prefs.getBoolean("hintSeen", false)
+        set(v) { prefs.edit().putBoolean("hintSeen", v).apply() }
+
     fun begin() {
         if (tracking.value) return   // podwójny Start nie tworzy drugiego przejazdu
         trips.value = listOf(Trip(start = System.currentTimeMillis(), price = price, cons = cons, split = split)) + trips.value

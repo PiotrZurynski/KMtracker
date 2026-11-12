@@ -53,6 +53,25 @@ private val pl = Locale("pl", "PL")
 private fun km(m: Double) = String.format(pl, "%.1f", m / 1000)
 private fun zl(v: Double) = String.format(pl, "%.2f zł", v)
 
+private val isXiaomi = Build.MANUFACTURER.lowercase().let { it.contains("xiaomi") || it.contains("redmi") || it.contains("poco") }
+
+private fun openBattery(ctx: android.content.Context) {
+    val uri = android.net.Uri.parse("package:${ctx.packageName}")
+    val tries = listOf(
+        Intent(android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, uri),
+        Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri),
+    )
+    for (i in tries) if (runCatching { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess) return
+}
+
+private fun openAutostart(ctx: android.content.Context) {
+    val miui = Intent().setComponent(android.content.ComponentName(
+        "com.miui.securitycenter", "com.miui.permcenter.autostart.AutoStartManagementActivity"))
+    val fallback = Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+        android.net.Uri.parse("package:${ctx.packageName}"))
+    for (i in listOf(miui, fallback)) if (runCatching { ctx.startActivity(i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }.isSuccess) return
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -79,10 +98,14 @@ fun App() {
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         if (it[Manifest.permission.ACCESS_FINE_LOCATION] == true) startSvc()
     }
+    var hint by remember { mutableStateOf(false) }
+    fun proceed() {
+        if (perms.all { ContextCompat.checkSelfPermission(ctx, it) == 0 }) startSvc() else launcher.launch(perms)
+    }
     fun toggle() {
         if (tracking) ctx.startService(Intent(ctx, TrackingService::class.java).setAction(TrackingService.ACTION_STOP))
-        else if (perms.all { ContextCompat.checkSelfPermission(ctx, it) == 0 }) startSvc()
-        else launcher.launch(perms)
+        else if (isXiaomi && !Tracker.hintSeen) hint = true   // pierwszy Start na Xiaomi: najpierw ustawienia baterii
+        else proceed()
     }
 
     val owed = remember(trips) { trips.filter { !it.settled } }
@@ -138,7 +161,22 @@ fun App() {
         confirmButton = { TextButton(onClick = { Tracker.settleAll(); confirm = false }) { Text("Rozlicz") } },
         dismissButton = { TextButton(onClick = { confirm = false }) { Text("Anuluj") } },
     )
-    if (settings) SettingsDialog { settings = false }
+    if (hint) AlertDialog(
+        onDismissRequest = { hint = false },
+        title = { Text("Xiaomi / HyperOS: ważne") },
+        text = {
+            Column {
+                Text("Telefony Xiaomi domyślnie zabijają apki w tle, przez co kilometry przestają się liczyć po wygaszeniu ekranu. Ustaw raz:")
+                Spacer(Modifier.height(8.dp))
+                Text("1. Bateria → TrackerCar → „Bez ograniczeń”.\n2. Autostart → włącz dla TrackerCar.\n3. W widoku ostatnich aplikacji przytrzymaj kartę TrackerCar i wybierz kłódkę (zablokuj).")
+                Spacer(Modifier.height(8.dp))
+                Row { TextButton({ openBattery(ctx) }) { Text("Bateria") }; TextButton({ openAutostart(ctx) }) { Text("Autostart") } }
+            }
+        },
+        confirmButton = { TextButton(onClick = { Tracker.hintSeen = true; hint = false; proceed() }) { Text("Gotowe, startuj") } },
+        dismissButton = { TextButton(onClick = { hint = false }) { Text("Anuluj") } },
+    )
+    if (settings) SettingsDialog(onHelp = { settings = false; hint = true }) { settings = false }
 }
 
 @Composable
@@ -169,7 +207,7 @@ private fun DayCard(day: String, list: List<Trip>) {
 }
 
 @Composable
-private fun SettingsDialog(onClose: () -> Unit) {
+private fun SettingsDialog(onHelp: () -> Unit, onClose: () -> Unit) {
     var price by remember { mutableStateOf(Tracker.price.toString()) }
     var cons by remember { mutableStateOf(Tracker.cons.toString()) }
     AlertDialog(
@@ -182,6 +220,7 @@ private fun SettingsDialog(onClose: () -> Unit) {
                 OutlinedTextField(cons, { cons = it }, label = { Text("Spalanie (l/100 km)") }, singleLine = true)
             }
         },
+        dismissButton = { TextButton(onClick = onHelp) { Text("Pomoc: bateria") } },
         confirmButton = {
             TextButton(onClick = {
                 price.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 }?.let { Tracker.price = it }
