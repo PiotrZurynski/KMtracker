@@ -18,7 +18,7 @@ import java.io.File
 
 /** Mapa OpenStreetMap (bez klucza API). Linię trasy rysuje apka; kafelki wymagają internetu. */
 @Composable
-fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier) {
+fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier, lineColor: Int = 0xFFE9204F.toInt()) {
     val ctx = LocalContext.current
     val map = remember {
         Configuration.getInstance().apply {
@@ -50,16 +50,18 @@ fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier) {
     }
     // update{} odpala się przy każdej rekompozycji rodzica – przebudowuj overlaye tylko dla nowej listy punktów
     val applied = remember { arrayOfNulls<Any>(1) }
+    val appliedColor = remember { IntArray(1) }
     AndroidView(factory = { map }, modifier = modifier, update = { m ->
-        if (applied[0] === points) return@AndroidView
+        if (applied[0] === points && appliedColor[0] == lineColor) return@AndroidView
         applied[0] = points
+        appliedColor[0] = lineColor
         m.overlays.clear()
         m.overlays.add(CopyrightOverlay(m.context))   // wymagana atrybucja źródła mapy
         val gp = points.map { GeoPoint(it.lat, it.lon) }
         if (gp.size > 1) {
             m.overlays.add(Polyline().apply {
                 setPoints(gp)
-                outlinePaint.color = 0xFFE9204F.toInt()
+                outlinePaint.color = lineColor
                 outlinePaint.strokeWidth = 10f
             })
         }

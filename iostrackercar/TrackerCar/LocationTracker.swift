@@ -197,7 +197,7 @@ final class LocationTracker: NSObject, CLLocationManagerDelegate {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let state = TripAttributes.ContentState(meters: trip.meters, cost: trip.cost)
         activity = try? Activity.request(
-            attributes: TripAttributes(startedAt: trip.startedAt),
+            attributes: TripAttributes(startedAt: trip.startedAt, accent: Prefs.accentIndex),
             content: .init(state: state, staleDate: nil))
     }
 

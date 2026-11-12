@@ -75,6 +75,10 @@ object Tracker {
         get() = prefs.getInt("split", 2)
         set(v) { prefs.edit().putInt("split", v.coerceAtLeast(1)).apply() }
 
+    var accent: Int
+        get() = prefs.getInt("accent", 0)
+        set(v) { prefs.edit().putInt("accent", v).apply() }
+
     var hintSeen: Boolean
         get() = prefs.getBoolean("hintSeen", false)
         set(v) { prefs.edit().putBoolean("hintSeen", v).apply() }

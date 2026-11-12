@@ -9,13 +9,24 @@ struct TripAttributes: ActivityAttributes {
         var cost: Double
     }
     var startedAt: Date
+    var accent: Int = 0       // wybrany motyw (indeks koloru akcentu)
 }
 
 // MARK: - Motyw
 
 enum Theme {
     static let bg = Color(red: 0x1b/255, green: 0x1b/255, blue: 0x1b/255)      // #1b1b1b
-    static let accent = Color(red: 0xe9/255, green: 0x20/255, blue: 0x4f/255)  // #e9204f
+    /// Motywy: kolor akcentu do wyboru w Ustawieniach (domyślnie czerwony #e9204f).
+    static let accentOptions: [(name: String, color: Color)] = [
+        ("Czerwony", Color(red: 0xe9/255, green: 0x20/255, blue: 0x4f/255)),
+        ("Turkus", Color(red: 0x1f/255, green: 0xd6/255, blue: 0xc6/255)),
+        ("Limonka", Color(red: 0xc6/255, green: 0xff/255, blue: 0x3d/255)),
+        ("Fiolet", Color(red: 0xa7/255, green: 0x8b/255, blue: 0xfa/255)),
+        ("Pomarańcz", Color(red: 0xff/255, green: 0x7a/255, blue: 0x2f/255)),
+        ("Niebieski", Color(red: 0x3b/255, green: 0x9b/255, blue: 0xff/255)),
+    ]
+    static func accent(_ index: Int) -> Color { accentOptions[min(max(index, 0), accentOptions.count - 1)].color }
+    static var accent: Color { accent(Prefs.accentIndex) }
     static let ink = Color(red: 0xf3/255, green: 0xf3/255, blue: 0xf3/255)     // #f3f3f3
     static let card = ink.opacity(0.06)
 
@@ -51,6 +62,10 @@ enum Prefs {
     static var split: Int {
         get { max(1, d.object(forKey: "split") as? Int ?? 2) }
         set { d.set(max(1, newValue), forKey: "split") }
+    }
+    static var accentIndex: Int {
+        get { d.integer(forKey: "accent") }
+        set { d.set(newValue, forKey: "accent") }
     }
     static var priceDate: Date? { d.object(forKey: "priceDate") as? Date }
     static var sourceURL: String {

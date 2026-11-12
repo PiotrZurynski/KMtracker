@@ -2,8 +2,15 @@ import SwiftUI
 import SwiftData
 import MapKit
 
+// Motyw: indeks akcentu trafia do środowiska, więc zmiana w Ustawieniach odświeża widoki bez ich przebudowy.
+private struct AccentKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    var accentIdx: Int { get { self[AccentKey.self] } set { self[AccentKey.self] = newValue } }
+}
+
 struct ContentView: View {
     @AppStorage("tab") private var tab = 0   // ustawiane też argumentem -tab w podglądzie
+    @AppStorage("accent") private var accentIdx = 0
     var body: some View {
         TabView(selection: $tab) {
             HomeView().tabItem { Label("Start", systemImage: "car.fill") }.tag(0)
@@ -12,6 +19,7 @@ struct ContentView: View {
         }
         .tint(Theme.accent)
         .font(Theme.f(16))
+        .environment(\.accentIdx, accentIdx)
     }
 }
 
@@ -21,6 +29,7 @@ struct TripsView: View {
     @Environment(LocationTracker.self) private var tracker
     @Query(sort: \Trip.startedAt, order: .reverse) private var trips: [Trip]
     @Query(sort: \Settlement.date, order: .reverse) private var settlements: [Settlement]
+    @Environment(\.accentIdx) private var _accent
     @State private var tab = 0
 
     private var days: [(day: Date, trips: [Trip])] {
@@ -93,6 +102,7 @@ struct HomeView: View {
     @Query(filter: #Predicate<Trip> { !$0.settled }) private var owed: [Trip]
     @State private var showSettings = false
     @State private var confirmSettle = false
+    @Environment(\.accentIdx) private var _accent
 
     private var owedMeters: Double { owed.reduce(0) { $0 + $1.meters } }
     private var owedCost: Double { owed.reduce(0) { $0 + $1.cost } }
@@ -174,6 +184,7 @@ struct HomeView: View {
 struct StartStopButton: View {
     let isOn: Bool
     let action: () -> Void
+    @Environment(\.accentIdx) private var _accent
     @State private var ripple = true     // true = fala już zakończona (niewidoczna)
     @State private var draw: CGFloat = 1
 
@@ -274,6 +285,7 @@ struct DayCard: View {
     let trips: [Trip]
     @State private var open = UserDefaults.standard.bool(forKey: "expand")
     @State private var editing: Trip?
+    @Environment(\.accentIdx) private var _accent
 
     private var meters: Double { trips.reduce(0) { $0 + $1.meters } }
     private var cost: Double { trips.reduce(0) { $0 + $1.cost } }
@@ -344,6 +356,7 @@ struct TripEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var ctx
     @Bindable var trip: Trip
+    @Environment(\.accentIdx) private var _accent
     @State private var coords: [CLLocationCoordinate2D] = []   // dekodowane raz, nie przy każdym znaku w polu
 
     var body: some View {

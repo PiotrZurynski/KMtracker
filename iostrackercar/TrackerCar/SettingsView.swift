@@ -4,6 +4,7 @@ import SwiftData
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var ctx
+    @Environment(\.accentIdx) private var accentIdx
     @State private var price = Prefs.price
     @State private var cons = Prefs.consumption
     @State private var split = Prefs.split
@@ -15,6 +16,18 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Motyw kolorystyczny") {
+                    HStack(spacing: 14) {
+                        ForEach(Theme.accentOptions.indices, id: \.self) { i in
+                            Circle().fill(Theme.accentOptions[i].color)
+                                .frame(width: 32, height: 32)
+                                .overlay(Circle().strokeBorder(Theme.ink, lineWidth: accentIdx == i ? 3 : 0).padding(-4))
+                                .onTapGesture { Prefs.accentIndex = i }
+                                .accessibilityLabel(Theme.accentOptions[i].name)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
                 Section("Paliwo") {
                     HStack {
                         Text("Cena za litr")

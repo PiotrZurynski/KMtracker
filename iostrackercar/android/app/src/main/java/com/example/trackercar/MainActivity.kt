@@ -62,6 +62,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -84,7 +85,13 @@ import java.util.Date
 import java.util.Locale
 
 private val Bg = Color(0xFF1B1B1B)
-private val Accent = Color(0xFFE9204F)
+// Motywy: kolor akcentu do wyboru w Ustawieniach (domyślnie czerwony #e9204f).
+private val AccentPalette = listOf(
+    "Czerwony" to Color(0xFFE9204F), "Turkus" to Color(0xFF1FD6C6), "Limonka" to Color(0xFFC6FF3D),
+    "Fiolet" to Color(0xFFA78BFA), "Pomarańcz" to Color(0xFFFF7A2F), "Niebieski" to Color(0xFF3B9BFF),
+)
+private var accentIdx by mutableIntStateOf(0)   // stan Compose: zmiana odświeża wszystko, co czyta Accent
+private val Accent: Color get() = AccentPalette[accentIdx.coerceIn(0, AccentPalette.lastIndex)].second
 private val Ink = Color(0xFFF3F3F3)
 private val Card = Ink.copy(alpha = 0.06f)
 
@@ -138,6 +145,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Tracker.init(this)
+        accentIdx = Tracker.accent
         setContent { App() }
     }
 }
@@ -260,7 +268,7 @@ private fun HomeScreen(
         }
         if (tracking) {
             val live by Tracker.liveRoute.collectAsState()
-            RouteMap(live, true, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)))
+            RouteMap(live, true, Modifier.fillMaxWidth().height(220.dp).clip(RoundedCornerShape(14.dp)), Accent.toArgb())
             Spacer(Modifier.height(24.dp))
         }
     }
@@ -401,7 +409,7 @@ private fun TripDialog(trip: Trip, onClose: () -> Unit) {
                 Text("PRZEJAZD", style = t(14, 500, Ink.copy(alpha = .55f)), letterSpacing = 5.sp)
                 Spacer(Modifier.height(14.dp))
                 if (route.size > 1) {
-                    RouteMap(route, false, Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(14.dp)))
+                    RouteMap(route, false, Modifier.fillMaxWidth().height(240.dp).clip(RoundedCornerShape(14.dp)), Accent.toArgb())
                     Spacer(Modifier.height(14.dp))
                 }
                 OutlinedTextField(kmText, { kmText = it }, label = { Text("Dystans (km)") }, singleLine = true, enabled = !ongoing, modifier = Modifier.fillMaxWidth())
@@ -512,6 +520,16 @@ private fun SettingsDialog(onHelp: () -> Unit, onClose: () -> Unit) {
         title = { Text("Ustawienia") },
         text = {
             Column {
+                Text("Motyw kolorystyczny")
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AccentPalette.forEachIndexed { i, p ->
+                        Box(Modifier.size(32.dp).clip(CircleShape).background(p.second)
+                            .let { if (accentIdx == i) it.border(3.dp, Ink, CircleShape) else it }
+                            .clickable { accentIdx = i; Tracker.accent = i })
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
                 OutlinedTextField(price, { price = it }, label = { Text("Cena za litr (zł)") }, singleLine = true)
                 Spacer(Modifier.height(8.dp))
                 OutlinedTextField(cons, { cons = it }, label = { Text("Spalanie (l/100 km)") }, singleLine = true)

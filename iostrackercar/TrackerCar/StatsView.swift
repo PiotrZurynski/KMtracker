@@ -3,6 +3,7 @@ import SwiftData
 import Charts
 
 struct StatsView: View {
+    @Environment(\.accentIdx) private var _accent
     // Tylko zakończone przejazdy: trwający przejazd nie wywołuje przeliczania statystyk przy każdym zapisie.
     @Query(filter: #Predicate<Trip> { $0.endedAt != nil }, sort: \Trip.startedAt) private var finished: [Trip]
 
