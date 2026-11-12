@@ -12,14 +12,56 @@ struct ContentView: View {
     @AppStorage("tab") private var tab = 0   // ustawiane też argumentem -tab w podglądzie
     @AppStorage("accent") private var accentIdx = 0
     var body: some View {
-        TabView(selection: $tab) {
-            HomeView().tabItem { Label("Start", systemImage: "car.fill") }.tag(0)
-            TripsView().tabItem { Label("Przejazdy", systemImage: "list.bullet") }.tag(1)
-            StatsView().tabItem { Label("Statystyki", systemImage: "chart.bar.fill") }.tag(2)
+        // Własny przełącznik zakładek: wszystkie trzy widoki żyją cały czas (zachowują stan),
+        // a zmiana zakładki to krótkie przesunięcie + zanikanie (0,25 s, kończy się samo).
+        ZStack {
+            ForEach(0..<3, id: \.self) { i in
+                page(i)
+                    .opacity(tab == i ? 1 : 0)
+                    .offset(x: tab == i ? 0 : (i < tab ? -30 : 30))
+                    .allowsHitTesting(tab == i)
+                    .accessibilityHidden(tab != i)
+            }
         }
+        .animation(.easeInOut(duration: 0.25), value: tab)
+        .safeAreaInset(edge: .bottom, spacing: 0) { tabBar }
+        .background(Theme.bg.ignoresSafeArea())
         .tint(Theme.accent)
         .font(Theme.f(16))
         .environment(\.accentIdx, accentIdx)
+        .sensoryFeedback(.selection, trigger: tab)
+    }
+
+    @ViewBuilder private func page(_ i: Int) -> some View {
+        switch i {
+        case 0: HomeView()
+        case 1: TripsView()
+        default: StatsView()
+        }
+    }
+
+    private var tabBar: some View {
+        HStack(spacing: 0) {
+            item(0, "START", "car.fill")
+            item(1, "PRZEJAZDY", "list.bullet")
+            item(2, "STATYSTYKI", "chart.bar.fill")
+        }
+        .padding(.top, 6)
+        .background(Theme.bg)
+        .overlay(alignment: .top) { Rectangle().fill(Theme.ink.opacity(0.08)).frame(height: 1) }
+    }
+
+    private func item(_ i: Int, _ title: String, _ icon: String) -> some View {
+        Button { tab = i } label: {
+            VStack(spacing: 3) {
+                Image(systemName: icon).font(.system(size: 18))
+                Text(title).font(Theme.f(11, .medium)).tracking(1.5)
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 6)
+            .foregroundStyle(tab == i ? Theme.accent : Theme.ink.opacity(0.5))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -12,7 +12,13 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -152,10 +158,13 @@ class MainActivity : ComponentActivity() {
 
 // ---------- animacja wejścia (jednorazowa, krótka) ----------
 
+private var introPlayed = false
+
 @Composable
 private fun Modifier.rise(delayMs: Int = 0): Modifier {
-    val a = remember { Animatable(0f) }
-    LaunchedEffect(Unit) { delay(delayMs.toLong()); a.animateTo(1f, tween(500)) }
+    // Animacja wejścia tylko przy starcie apki; powrót na zakładkę Start jej nie powtarza.
+    val a = remember { Animatable(if (introPlayed) 1f else 0f) }
+    LaunchedEffect(Unit) { if (!introPlayed) { delay(delayMs.toLong()); a.animateTo(1f, tween(500)) } }
     return this.graphicsLayer { alpha = a.value; translationY = (1f - a.value) * 40f }
 }
 
@@ -167,6 +176,7 @@ fun App() {
     val trips by Tracker.trips.collectAsState()
     val tracking by Tracker.tracking.collectAsState()
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) { delay(1000); introPlayed = true }   // po starcie animacja wejścia już się nie powtarza
     var settings by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf(false) }
     var hint by remember { mutableStateOf(false) }
@@ -197,10 +207,21 @@ fun App() {
     Surface(color = Bg, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.statusBarsPadding().navigationBarsPadding()) {
             Box(Modifier.weight(1f)) {
-                when (tab) {
-                    0 -> HomeScreen(tracking, owed.isNotEmpty(), owedM, owedC, ::toggle, { confirm = true }, { settings = true })
-                    1 -> TripsScreen(trips)
-                    else -> StatsScreen(trips)
+                // Krótkie przesunięcie + zanikanie przy zmianie zakładki (0,25 s, kończy się samo).
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        val dir = if (targetState > initialState) 1 else -1
+                        (fadeIn(tween(250)) + slideInHorizontally(tween(250)) { dir * it / 10 }) togetherWith
+                            (fadeOut(tween(200)) + slideOutHorizontally(tween(250)) { -dir * it / 10 })
+                    },
+                    label = "tabs",
+                ) { page ->
+                    when (page) {
+                        0 -> HomeScreen(tracking, owed.isNotEmpty(), owedM, owedC, ::toggle, { confirm = true }, { settings = true })
+                        1 -> TripsScreen(trips)
+                        else -> StatsScreen(trips)
+                    }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
