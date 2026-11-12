@@ -43,6 +43,7 @@ private val Card = Ink.copy(alpha = 0.06f)
 
 // Cache rodzin czcionek: t() jest wołane w composition, nie twórz FontFamily przy każdej rekompozycji.
 private val fontCache = HashMap<Int, FontFamily>()
+@OptIn(androidx.compose.ui.text.ExperimentalTextApi::class)
 private fun osw(w: Int): FontFamily = fontCache.getOrPut(w) {
     FontFamily(Font(R.font.oswald, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w))))
 }
