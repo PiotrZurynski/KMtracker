@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftData
 
 struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var ctx
     @State private var price = Prefs.price
     @State private var cons = Prefs.consumption
     @State private var split = Prefs.split
@@ -29,6 +31,12 @@ struct SettingsView: View {
                         Text("l/100 km")
                     }
                     Stepper("Dzielone na: \(split)", value: $split, in: 1...6)
+                    Button("Zastosuj cenę i spalanie do nierozliczonych przejazdów") {
+                        let all = (try? ctx.fetch(FetchDescriptor<Trip>(predicate: #Predicate { !$0.settled }))) ?? []
+                        all.forEach { if price > 0 { $0.pricePerLiter = price }; if cons > 0 { $0.consumption = cons } }
+                        try? ctx.save()
+                        status = "Zaktualizowano \(all.count) przejazdów ✓"
+                    }
                     if let d = Prefs.priceDate {
                         Text("Cena z \(d.formatted(date: .abbreviated, time: .shortened))")
                             .font(.footnote).foregroundStyle(.secondary)

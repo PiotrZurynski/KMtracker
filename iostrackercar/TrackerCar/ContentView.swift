@@ -194,6 +194,7 @@ struct DayCard: View {
     let day: Date
     let trips: [Trip]
     @State private var open = UserDefaults.standard.bool(forKey: "expand")
+    @State private var editing: Trip?
 
     private var meters: Double { trips.reduce(0) { $0 + $1.meters } }
     private var cost: Double { trips.reduce(0) { $0 + $1.cost } }
@@ -230,6 +231,8 @@ struct DayCard: View {
                             Text("\(Fmt.km(t.meters)) km").font(Theme.f(15, .medium)).monospacedDigit()
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if t.endedAt != nil { editing = t } }
                         .contextMenu {
                             Button(role: .destructive) { ctx.delete(t); try? ctx.save() } label: {
                                 Label("Usuń przejazd", systemImage: "trash")
@@ -245,5 +248,52 @@ struct DayCard: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.ink.opacity(0.07)))
         .foregroundStyle(Theme.ink)
         .opacity(settled ? 0.4 : 1)
+        .sheet(item: $editing) { TripEditView(trip: $0).presentationDetents([.medium]) }
+    }
+}
+
+// MARK: - Edycja przejazdu
+
+struct TripEditView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var ctx
+    @Bindable var trip: Trip
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Przejazd") {
+                    row("Dystans", unit: "km", value: Binding(
+                        get: { (trip.meters / 1000 * 10).rounded() / 10 },
+                        set: { trip.meters = max(0, $0) * 1000 }))
+                    row("Cena za litr", unit: "zł", value: $trip.pricePerLiter)
+                    row("Spalanie", unit: "l/100 km", value: $trip.consumption)
+                }
+                Section {
+                    HStack {
+                        Text("Twoja część")
+                        Spacer()
+                        Text(Fmt.zl(trip.cost)).foregroundStyle(Theme.accent).monospacedDigit()
+                    }
+                }
+            }
+            .navigationTitle("Edytuj przejazd")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { Button("Gotowe") { try? ctx.save(); dismiss() } }
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg)
+        }
+        .font(Theme.f(16))
+        .tint(Theme.accent)
+    }
+
+    private func row(_ title: String, unit: String, value: Binding<Double>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            TextField("0", value: value, format: .number).keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing).frame(width: 90)
+            Text(unit).foregroundStyle(Theme.ink.opacity(0.5))
+        }
     }
 }
