@@ -7,13 +7,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import org.osmdroid.config.Configuration
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.BoundingBox
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
+import org.osmdroid.views.overlay.CopyrightOverlay
 import org.osmdroid.views.overlay.Polyline
-import org.osmdroid.views.overlay.TilesOverlay
 import java.io.File
 
 /** Mapa OpenStreetMap (bez klucza API). Linię trasy rysuje apka; kafelki wymagają internetu. */
@@ -22,17 +22,25 @@ fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val map = remember {
         Configuration.getInstance().apply {
-            userAgentValue = ctx.packageName                       // wymagane przez serwery OSM
+            userAgentValue = "TrackerCar/1.0 (personal Android app)"   // czytelny, nie domyślny User-Agent
             osmdroidBasePath = File(ctx.cacheDir, "osm")           // bez uprawnień do pamięci
             osmdroidTileCache = File(ctx.cacheDir, "osm/tiles")
             tileFileSystemCacheMaxBytes = 100L * 1024 * 1024       // domyślnie 600 MB – za dużo
             tileFileSystemCacheTrimBytes = 80L * 1024 * 1024
         }
         MapView(ctx).apply {
-            setTileSource(TileSourceFactory.MAPNIK)
+            // Ciemne kafelki CARTO (dane © OpenStreetMap contributors) – serwer OSM blokuje apki (HTTP 403).
+            setTileSource(XYTileSource(
+                "CartoDark", 0, 19, 256, ".png",
+                arrayOf(
+                    "https://a.basemaps.cartocdn.com/dark_all/",
+                    "https://b.basemaps.cartocdn.com/dark_all/",
+                    "https://c.basemaps.cartocdn.com/dark_all/",
+                ),
+                "© OpenStreetMap contributors © CARTO",
+            ))
             setMultiTouchControls(!live)
             zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
-            overlayManager.tilesOverlay.setColorFilter(TilesOverlay.INVERT_COLORS)   // ciemny wygląd
             controller.setZoom(15.0)
         }
     }
@@ -46,6 +54,7 @@ fun RouteMap(points: List<Pt>, live: Boolean, modifier: Modifier = Modifier) {
         if (applied[0] === points) return@AndroidView
         applied[0] = points
         m.overlays.clear()
+        m.overlays.add(CopyrightOverlay(m.context))   // wymagana atrybucja źródła mapy
         val gp = points.map { GeoPoint(it.lat, it.lon) }
         if (gp.size > 1) {
             m.overlays.add(Polyline().apply {
