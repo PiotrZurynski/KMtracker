@@ -9,6 +9,7 @@ struct ContentView: View {
             TripsView().tabItem { Label("Przejazdy", systemImage: "list.bullet") }.tag(1)
         }
         .tint(Theme.accent)
+        .font(Theme.f(16))
     }
 }
 
@@ -32,11 +33,12 @@ struct TripsView: View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             ScrollView {
-                VStack(spacing: 16) {
-                    Picker("", selection: $tab) {
-                        Text("Przejazdy").tag(0)
-                        Text("Rozliczenia").tag(1)
-                    }.pickerStyle(.segmented).padding(.top, 8)
+                VStack(spacing: 14) {
+                    HStack(spacing: 8) {
+                        chip("PRZEJAZDY", 0)
+                        chip("ROZLICZENIA", 1)
+                        Spacer()
+                    }.padding(.top, 12)
 
                     if tab == 0 {
                         if days.isEmpty { empty("Brak przejazdów") }
@@ -47,24 +49,35 @@ struct TripsView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(s.date.formatted(date: .long, time: .shortened))
-                                        .font(.subheadline.weight(.semibold))
+                                        .font(Theme.f(16, .medium))
                                     Text("\(s.tripCount) przejazdów · \(Fmt.km(s.meters)) km")
-                                        .font(.caption).foregroundStyle(.secondary)
+                                        .font(Theme.f(13)).foregroundStyle(Theme.ink.opacity(0.55))
                                 }
                                 Spacer()
-                                Text(Fmt.zl(s.amount)).font(.headline).foregroundStyle(Theme.accent).monospacedDigit()
+                                Text(Fmt.zl(s.amount)).font(Theme.f(22, .bold)).foregroundStyle(Theme.accent).monospacedDigit()
                             }
                             .padding(16)
-                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                            .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                     }
                 }.padding(.horizontal, 20).padding(.bottom, 40)
             }
         }
+        .foregroundStyle(Theme.ink)
+    }
+
+    private func chip(_ t: String, _ i: Int) -> some View {
+        Button { withAnimation(.snappy) { tab = i } } label: {
+            Text(t).font(Theme.f(13, .medium)).tracking(2)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(tab == i ? Theme.accent : Color.clear, in: Capsule())
+                .overlay(Capsule().strokeBorder(tab == i ? Color.clear : Theme.ink.opacity(0.25)))
+                .foregroundStyle(tab == i ? Theme.ink : Theme.ink.opacity(0.7))
+        }
     }
 
     private func empty(_ t: String) -> some View {
-        Text(t).font(.footnote).foregroundStyle(.secondary).padding(.top, 40)
+        Text(t).font(Theme.f(15)).foregroundStyle(Theme.ink.opacity(0.5)).padding(.top, 40)
     }
 }
 
@@ -85,7 +98,7 @@ struct HomeView: View {
         ZStack {
             Theme.bg.ignoresSafeArea()
             ScrollView {
-                VStack(spacing: 28) {
+                VStack(spacing: 26) {
                     header
                     hero
                     StartStopButton(isOn: tracker.isTracking) {
@@ -93,14 +106,14 @@ struct HomeView: View {
                     }
                     if tracker.authorization == .denied || tracker.authorization == .restricted {
                         Text("Brak zgody na lokalizację. Włącz ją w Ustawieniach iOS.")
-                            .font(.footnote).foregroundStyle(Theme.stop)
+                            .font(Theme.f(14)).foregroundStyle(Theme.accent)
                     }
                     if !owed.isEmpty && !tracker.isTracking {
                         Button { confirmSettle = true } label: {
                             Text("ROZLICZ \(Fmt.zl(owedCost))")
-                                .font(.subheadline.weight(.heavy)).tracking(2)
-                                .padding(.horizontal, 28).padding(.vertical, 14)
-                                .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.6)))
+                                .font(Theme.f(17, .medium)).tracking(3)
+                                .padding(.horizontal, 30).padding(.vertical, 13)
+                                .overlay(Capsule().strokeBorder(Theme.accent, lineWidth: 1.5))
                                 .foregroundStyle(Theme.accent)
                         }
                     }
@@ -108,6 +121,7 @@ struct HomeView: View {
                 .padding(.horizontal, 20).padding(.bottom, 40)
             }
         }
+        .foregroundStyle(Theme.ink)
         .onAppear { tracker.attach(ctx) }
         .sheet(isPresented: $showSettings) { SettingsView().presentationDetents([.medium, .large]) }
         .confirmationDialog("Rozliczyć \(Fmt.zl(owedCost)) (\(Fmt.km(owedMeters)) km)?", isPresented: $confirmSettle, titleVisibility: .visible) {
@@ -122,35 +136,34 @@ struct HomeView: View {
 
     private var header: some View {
         HStack {
-            Text("TRACKERCAR").font(.caption.weight(.heavy)).tracking(4)
-                .foregroundStyle(.white.opacity(0.5))
+            Text("TRACKERCAR").font(Theme.f(14, .medium)).tracking(5)
+                .foregroundStyle(Theme.ink.opacity(0.55))
             Spacer()
             Button { showSettings = true } label: {
-                Image(systemName: "slider.horizontal.3").foregroundStyle(.white.opacity(0.7))
+                Image(systemName: "slider.horizontal.3").foregroundStyle(Theme.ink.opacity(0.7))
             }
         }.padding(.top, 8)
     }
 
     private var hero: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 2) {
             Text(Fmt.km(owedMeters))
-                .font(.system(size: 76, weight: .black, design: .rounded))
+                .font(Theme.f(96, .bold))
                 .monospacedDigit()
-                .foregroundStyle(LinearGradient(colors: [Theme.accent, Theme.accent2],
-                                                startPoint: .leading, endPoint: .trailing))
+                .foregroundStyle(Theme.ink)
                 .contentTransition(.numericText())
                 .animation(.smooth, value: owedMeters)
-            Text("KM DO ROZLICZENIA").font(.caption2.weight(.bold)).tracking(3)
-                .foregroundStyle(.white.opacity(0.4))
+            Text("KM DO ROZLICZENIA").font(Theme.f(13, .medium)).tracking(4)
+                .foregroundStyle(Theme.ink.opacity(0.45))
             Text("\(Fmt.zl(owedCost)) · Twoja ½")
-                .font(.title3.weight(.semibold)).monospacedDigit()
-                .padding(.top, 8)
-        }.padding(.top, 12)
+                .font(Theme.f(26, .semibold)).monospacedDigit()
+                .foregroundStyle(Theme.accent)
+                .padding(.top, 10)
+        }.padding(.top, 8)
     }
-
 }
 
-// MARK: - Start / Stop
+// MARK: - Start / Stop (szkicowy znaczek)
 
 struct StartStopButton: View {
     let isOn: Bool
@@ -159,27 +172,16 @@ struct StartStopButton: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Circle().fill((isOn ? Theme.stop : Theme.accent).opacity(0.18)).blur(radius: 30)
-                Circle()
-                    .strokeBorder(AngularGradient(colors: [Theme.accent, Theme.accent2, Theme.accent],
-                                                  center: .center), lineWidth: 3)
-                    .rotationEffect(.degrees(spin))
-                    .opacity(isOn ? 1 : 0.35)
-                Circle().fill(.white.opacity(0.04)).padding(10)
-                Text(isOn ? "STOP" : "START")
-                    .font(.system(size: 28, weight: .heavy, design: .rounded)).tracking(3)
-                    .foregroundStyle(isOn ? Theme.stop : Theme.accent)
-            }
-            .frame(width: 170, height: 170)
+            VolvoMark(label: isOn ? "STOP" : "START", isOn: isOn, spin: spin)
+                .frame(width: 210, height: 210)
         }
         .buttonStyle(.plain)
         .onChange(of: isOn) { _, on in
-            if on { withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { spin = 360 } }
+            if on { withAnimation(.linear(duration: 9).repeatForever(autoreverses: false)) { spin = 360 } }
             else { withAnimation(.default) { spin = 0 } }
         }
         .onAppear {
-            if isOn { withAnimation(.linear(duration: 4).repeatForever(autoreverses: false)) { spin = 360 } }
+            if isOn { withAnimation(.linear(duration: 9).repeatForever(autoreverses: false)) { spin = 360 } }
         }
         .sensoryFeedback(.impact, trigger: isOn)
     }
@@ -202,18 +204,18 @@ struct DayCard: View {
             Button { withAnimation(.spring(duration: 0.35)) { open.toggle() } } label: {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(day.formatted(.dateTime.weekday(.wide).day().month().locale(Locale(identifier: "pl_PL"))))
-                            .font(.subheadline.weight(.semibold))
+                        Text(day.formatted(.dateTime.weekday(.wide).day().month().locale(Locale(identifier: "pl_PL"))).uppercased())
+                            .font(Theme.f(16, .medium)).tracking(1)
                         Text("\(trips.count) \(trips.count == 1 ? "przejazd" : "przejazdy")")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(Theme.f(13)).foregroundStyle(Theme.ink.opacity(0.5))
                     }
                     Spacer()
                     VStack(alignment: .trailing, spacing: 2) {
-                        Text("\(Fmt.km(meters)) km").font(.subheadline.weight(.bold)).monospacedDigit()
-                        Text(Fmt.zl(cost)).font(.caption).foregroundStyle(Theme.accent).monospacedDigit()
+                        Text("\(Fmt.km(meters)) km").font(Theme.f(18, .semibold)).monospacedDigit()
+                        Text(Fmt.zl(cost)).font(Theme.f(14)).foregroundStyle(Theme.accent).monospacedDigit()
                     }
                     Image(systemName: "chevron.down").font(.caption.weight(.bold))
-                        .foregroundStyle(.secondary).rotationEffect(.degrees(open ? 180 : 0)).padding(.leading, 6)
+                        .foregroundStyle(Theme.ink.opacity(0.5)).rotationEffect(.degrees(open ? 180 : 0)).padding(.leading, 6)
                 }
                 .padding(16).contentShape(Rectangle())
             }.buttonStyle(.plain)
@@ -223,9 +225,9 @@ struct DayCard: View {
                     ForEach(trips) { t in
                         HStack {
                             Text("\(t.startedAt.formatted(date: .omitted, time: .shortened))–\(t.endedAt?.formatted(date: .omitted, time: .shortened) ?? "trwa")")
-                                .font(.footnote).foregroundStyle(.secondary).monospacedDigit()
+                                .font(Theme.f(14)).foregroundStyle(Theme.ink.opacity(0.6)).monospacedDigit()
                             Spacer()
-                            Text("\(Fmt.km(t.meters)) km").font(.footnote.weight(.semibold)).monospacedDigit()
+                            Text("\(Fmt.km(t.meters)) km").font(Theme.f(15, .medium)).monospacedDigit()
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .contextMenu {
@@ -233,14 +235,15 @@ struct DayCard: View {
                                 Label("Usuń przejazd", systemImage: "trash")
                             }
                         }
-                        Divider().overlay(.white.opacity(0.06))
+                        Divider().overlay(Theme.ink.opacity(0.08))
                     }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(.white.opacity(0.06)))
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.ink.opacity(0.07)))
+        .foregroundStyle(Theme.ink)
         .opacity(settled ? 0.4 : 1)
     }
 }

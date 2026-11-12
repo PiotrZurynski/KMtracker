@@ -59,7 +59,11 @@ struct SettingsView: View {
             }
             .navigationTitle("Ustawienia")
             .toolbar { Button("Gotowe") { save(); dismiss() } }
+            .scrollContentBackground(.hidden)
+            .background(Theme.bg)
         }
+        .font(Theme.f(16))
+        .tint(Theme.accent)
     }
 
     private func save() {

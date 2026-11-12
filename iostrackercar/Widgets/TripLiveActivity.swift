@@ -13,16 +13,16 @@ struct TripLiveActivity: Widget {
             // Ekran blokady
             HStack {
                 VStack(alignment: .leading) {
-                    Text("PRZEJAZD").font(.caption2.weight(.bold)).tracking(3).foregroundStyle(.secondary)
+                    Text("PRZEJAZD").font(Theme.f(12, .medium)).tracking(3).foregroundStyle(Theme.ink.opacity(0.5))
                     Text("\(Fmt.km(ctx.state.meters)) km")
-                        .font(.system(size: 34, weight: .black, design: .rounded)).foregroundStyle(Theme.accent)
-                        .monospacedDigit()
+                        .font(Theme.f(40, .bold)).foregroundStyle(Theme.ink).monospacedDigit()
                 }
                 Spacer()
                 VStack(alignment: .trailing) {
-                    Text(Fmt.zl(ctx.state.cost)).font(.title3.weight(.semibold)).monospacedDigit()
+                    Text(Fmt.zl(ctx.state.cost)).font(Theme.f(22, .semibold)).foregroundStyle(Theme.accent).monospacedDigit()
                     Text(timerInterval: ctx.attributes.startedAt...Date.distantFuture, countsDown: false)
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit().frame(width: 70, alignment: .trailing)
+                        .font(Theme.f(13)).foregroundStyle(Theme.ink.opacity(0.6)).monospacedDigit()
+                        .frame(width: 70, alignment: .trailing)
                 }
             }
             .padding().activityBackgroundTint(Theme.bg)
@@ -32,21 +32,20 @@ struct TripLiveActivity: Widget {
                     Image(systemName: "car.fill").foregroundStyle(Theme.accent).font(.title2)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(Fmt.zl(ctx.state.cost)).font(.headline).monospacedDigit()
+                    Text(Fmt.zl(ctx.state.cost)).font(Theme.f(18, .semibold)).foregroundStyle(Theme.accent).monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text("\(Fmt.km(ctx.state.meters)) km")
-                        .font(.system(size: 30, weight: .black, design: .rounded))
-                        .foregroundStyle(Theme.accent).monospacedDigit()
+                        .font(Theme.f(34, .bold)).foregroundStyle(Theme.ink).monospacedDigit()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(timerInterval: ctx.attributes.startedAt...Date.distantFuture, countsDown: false)
-                        .font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        .font(Theme.f(13)).foregroundStyle(Theme.ink.opacity(0.6)).monospacedDigit()
                 }
             } compactLeading: {
                 Image(systemName: "car.fill").foregroundStyle(Theme.accent)
             } compactTrailing: {
-                Text(Fmt.km(ctx.state.meters)).font(.caption.weight(.bold)).monospacedDigit()
+                Text(Fmt.km(ctx.state.meters)).font(Theme.f(14, .semibold)).monospacedDigit()
                     .foregroundStyle(Theme.accent)
             } minimal: {
                 Image(systemName: "car.fill").foregroundStyle(Theme.accent)

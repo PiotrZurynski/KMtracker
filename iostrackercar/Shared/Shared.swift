@@ -14,11 +14,15 @@ struct TripAttributes: ActivityAttributes {
 // MARK: - Motyw
 
 enum Theme {
-    static let bg = Color(red: 0.04, green: 0.04, blue: 0.05)
-    static let card = Color.white.opacity(0.05)
-    static let accent = Color(red: 0.78, green: 1.0, blue: 0.24)   // limonka
-    static let accent2 = Color(red: 0.25, green: 0.9, blue: 0.85)  // turkus
-    static let stop = Color(red: 1.0, green: 0.35, blue: 0.4)
+    static let bg = Color(red: 0x1b/255, green: 0x1b/255, blue: 0x1b/255)      // #1b1b1b
+    static let accent = Color(red: 0xe9/255, green: 0x20/255, blue: 0x4f/255)  // #e9204f
+    static let ink = Color(red: 0xf3/255, green: 0xf3/255, blue: 0xf3/255)     // #f3f3f3
+    static let card = ink.opacity(0.06)
+
+    /// Oswald (czcionka dołączona do apki).
+    static func f(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
+        .custom("Oswald", size: size).weight(weight)
+    }
 }
 
 // MARK: - Formatowanie

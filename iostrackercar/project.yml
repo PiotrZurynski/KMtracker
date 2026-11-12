@@ -21,6 +21,7 @@ targets:
         CFBundleDisplayName: TrackerCar
         UILaunchScreen: {}
         UIUserInterfaceStyle: Dark
+        UIAppFonts: [Oswald.ttf]
         NSSupportsLiveActivities: true
         UIBackgroundModes: [location]
         NSLocationWhenInUseUsageDescription: "Aplikacja liczy przejechane kilometry tylko między Start a Stop. Lokalizacja nie opuszcza telefonu."
@@ -28,6 +29,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.example.trackercar
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   TrackerCarWidgets:
     type: app-extension
     platform: iOS
@@ -36,6 +38,7 @@ targets:
       path: Widgets/Info.plist
       properties:
         CFBundleDisplayName: TrackerCar
+        UIAppFonts: [Oswald.ttf]
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:
