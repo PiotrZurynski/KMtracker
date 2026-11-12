@@ -4,6 +4,10 @@ import android.content.Context
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.DataOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import java.nio.ByteBuffer
 import java.util.UUID
 
 data class Trip(
@@ -19,14 +23,23 @@ data class Trip(
     val cost: Double get() = meters / 1000 * cons / 100 * price / split.coerceAtLeast(1)
 }
 
-/** Jedyne źródło prawdy: lista przejazdów + stan trackingu. Dane tylko lokalnie (prywatny plik apki). */
+data class Settlement(val date: Long, val meters: Double, val amount: Double, val count: Int)
+
+data class Pt(val lat: Double, val lon: Double)
+
+/** Jedyne źródło prawdy: lista przejazdów + stan trackingu. Dane tylko lokalnie (prywatne pliki apki). */
 object Tracker {
     val trips = MutableStateFlow<List<Trip>>(emptyList())
+    val settlements = MutableStateFlow<List<Settlement>>(emptyList())
     val tracking = MutableStateFlow(false)
+    /** Przerzedzona trasa trwającego przejazdu (do mapy na żywo), publikowana rzadko. */
+    val liveRoute = MutableStateFlow<List<Pt>>(emptyList())
 
     private lateinit var app: Context
     private var ready = false
     private var unsaved = 0.0
+    private var liveBuf = ArrayList<Pt>()
+    private var lastPublish = 0L
 
     fun init(ctx: Context) {
         if (ready) return
@@ -36,6 +49,7 @@ object Tracker {
         trips.value = load().mapNotNull {
             if (it.end == null) (if (it.meters < 50) null else it.copy(end = System.currentTimeMillis())) else it
         }
+        settlements.value = loadSettlements()
         save()
     }
 
@@ -62,6 +76,7 @@ object Tracker {
     fun begin() {
         if (tracking.value) return   // podwójny Start nie tworzy drugiego przejazdu
         trips.value = listOf(Trip(start = System.currentTimeMillis(), price = price, cons = cons, split = split)) + trips.value
+        liveBuf = ArrayList(); liveRoute.value = emptyList(); unsaved = 0.0
         tracking.value = true
         save()
     }
@@ -76,19 +91,67 @@ object Tracker {
     }
 
     fun finish() {
+        val open = trips.value.firstOrNull { it.end == null }
         trips.value = trips.value.mapNotNull {
             if (it.end == null) (if (it.meters < 50) null else it.copy(end = System.currentTimeMillis())) else it
         }
+        if (open != null && open.meters < 50) routeFile(open.id).delete()
+        liveBuf = ArrayList(); liveRoute.value = emptyList()
         tracking.value = false
         save()
     }
 
     fun settleAll() {
+        val now = System.currentTimeMillis()
+        val due = trips.value.filter { it.end != null && !it.settled }
+        if (due.isEmpty()) return
+        settlements.value = listOf(Settlement(now, due.sumOf { it.meters }, due.sumOf { it.cost }, due.size)) + settlements.value
         trips.value = trips.value.map { if (it.end != null) it.copy(settled = true) else it }
+        save(); saveSettlements()
+    }
+
+    fun delete(id: String) {
+        trips.value = trips.value.filterNot { it.id == id && it.end != null }
+        routeFile(id).delete()
         save()
     }
 
-    fun delete(id: String) { trips.value = trips.value.filterNot { it.id == id }; save() }
+    fun edit(id: String, meters: Double, price: Double, cons: Double, split: Int) {
+        trips.value = trips.value.map {
+            if (it.id == id && it.end != null) it.copy(meters = meters, price = price, cons = cons, split = split.coerceAtLeast(1)) else it
+        }
+        save()
+    }
+
+    // --- trasa: osobny plik binarny na przejazd (pary Double), dopisywanie bez przepisywania ---
+    private fun routeFile(id: String): File {
+        val dir = File(app.filesDir, "routes"); if (!dir.exists()) dir.mkdirs()
+        return File(dir, "$id.bin")
+    }
+
+    fun addPoint(lat: Double, lon: Double) {
+        val cur = trips.value.firstOrNull { it.end == null } ?: return
+        runCatching {
+            DataOutputStream(FileOutputStream(routeFile(cur.id), true)).use { it.writeDouble(lat); it.writeDouble(lon) }
+        }
+        liveBuf.add(Pt(lat, lon))
+        if (liveBuf.size > 600) liveBuf = ArrayList(liveBuf.filterIndexed { i, _ -> i % 2 == 0 })
+        val now = System.currentTimeMillis()
+        if (now - lastPublish > 4000) { lastPublish = now; liveRoute.value = liveBuf.toList() }
+    }
+
+    fun readRoute(id: String, limit: Int = 1500): List<Pt> = runCatching {
+        val f = routeFile(id)
+        if (!f.exists()) return emptyList()
+        val b = ByteBuffer.wrap(f.readBytes()).asDoubleBuffer()
+        val n = b.remaining() / 2
+        val step = if (n > limit) (n + limit - 1) / limit else 1
+        val out = ArrayList<Pt>()
+        var i = 0
+        while (i < n) { out.add(Pt(b.get(2 * i), b.get(2 * i + 1))); i += step }
+        if (step > 1 && n > 0) out.add(Pt(b.get(2 * (n - 1)), b.get(2 * (n - 1) + 1)))
+        out
+    }.getOrDefault(emptyList())
 
     // --- zapis (JSON w SharedPreferences prywatnych dla apki) ---
     // Zakończone przejazdy są niezmienne (instancje), więc ich JSON jest cache'owany –
@@ -114,6 +177,20 @@ object Tracker {
             val o = arr.getJSONObject(it)
             Trip(o.getString("id"), o.getLong("start"), if (o.isNull("end")) null else o.getLong("end"),
                 o.getDouble("m"), o.getDouble("p"), o.getDouble("c"), o.getInt("s"), o.getBoolean("x"))
+        }
+    }.getOrDefault(emptyList())
+
+    private fun saveSettlements() {
+        val arr = JSONArray()
+        settlements.value.forEach { arr.put(JSONObject().put("d", it.date).put("m", it.meters).put("a", it.amount).put("n", it.count)) }
+        prefs.edit().putString("settlements", arr.toString()).apply()
+    }
+
+    private fun loadSettlements(): List<Settlement> = runCatching {
+        val arr = JSONArray(prefs.getString("settlements", "[]"))
+        (0 until arr.length()).map {
+            val o = arr.getJSONObject(it)
+            Settlement(o.getLong("d"), o.getDouble("m"), o.getDouble("a"), o.getInt("n"))
         }
     }.getOrDefault(emptyList())
 }
